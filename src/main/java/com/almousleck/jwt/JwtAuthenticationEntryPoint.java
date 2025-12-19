@@ -26,8 +26,8 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 
         final Map<String, Object> body = new HashMap<>();
-        body.put("error", "UNAUTHORIZED");
-        body.put("message", "You are not authorized to access this resource.");
+        body.put("error", "未经授权");
+        body.put("message", "您没有权限访问此资源");
 
         final ObjectMapper mapper = new ObjectMapper();
         mapper.writeValue(response.getOutputStream(), body);

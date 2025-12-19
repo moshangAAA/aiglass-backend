@@ -2,6 +2,7 @@ package com.almousleck.config.security;
 
 import com.almousleck.config.ApplicationUserDetailsService;
 import com.almousleck.jwt.AuthenticationTokenFilter;
+import com.almousleck.jwt.JwtUtils;
 import org.modelmapper.ModelMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,8 +25,9 @@ public class ApplicationSecurityConfiguration {
     }
 
     @Bean
-    public AuthenticationTokenFilter authenticationTokenFilter() {
-        return new AuthenticationTokenFilter();
+    public AuthenticationTokenFilter authenticationTokenFilter(JwtUtils jwtUtils, 
+                                                               ApplicationUserDetailsService detailsService) {
+        return new AuthenticationTokenFilter(jwtUtils, detailsService);
     }
 
     @Bean

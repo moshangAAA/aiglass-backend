@@ -15,11 +15,9 @@ public class ApplicationUserDetailsService implements UserDetailsService {
     private final UserRepository userRepository;
 
     @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username);
-        if (user == null) {
-            throw new UsernameNotFoundException("User not found with username: " + username);
-        }
-        return ApplicationUserDetails.buildApplicationDetails(user);
+    public UserDetails loadUserByUsername(String identifier) throws UsernameNotFoundException {
+       User user = userRepository.findByUsernameOrPhoneNumber(identifier, identifier)
+               .orElseThrow(() -> new UsernameNotFoundException("未找到用户名为“:”的用户: " + identifier));
+       return ApplicationUserDetails.buildApplicationDetails(user);
     }
 }

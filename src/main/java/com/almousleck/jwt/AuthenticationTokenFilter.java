@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.util.StringUtils;
@@ -19,10 +18,8 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class AuthenticationTokenFilter extends OncePerRequestFilter {
 
-    @Autowired
-    private JwtUtils jwtUtils;
-    @Autowired
-    private ApplicationUserDetailsService applicationUserDetailsService;
+    private final JwtUtils jwtUtils;
+    private final ApplicationUserDetailsService applicationUserDetailsService;
 
     @Override
     protected void doFilterInternal(
@@ -43,11 +40,11 @@ public class AuthenticationTokenFilter extends OncePerRequestFilter {
             }
         } catch (JwtException ex) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write(ex.getMessage() + " : Invalid or expired token, you may login and try again!");
+            response.getWriter().write(ex.getMessage() + " : 无效或过期的令牌，您可以登录并再次尝试！");
             return;
         } catch (Exception ex) {
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            response.getWriter().write(ex.getMessage() + " : Something went wrong, please try again!");
+            response.getWriter().write(ex.getMessage() + " : 服务器内部错误，请稍后重试!");
             return;
         }
         filterChain.doFilter(request, response);

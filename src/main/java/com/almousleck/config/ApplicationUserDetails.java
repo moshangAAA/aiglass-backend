@@ -1,6 +1,7 @@
 package com.almousleck.config;
 
 import com.almousleck.model.User;
+import com.almousleck.enums.UserRole;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -22,6 +23,7 @@ public class ApplicationUserDetails implements UserDetails {
     private Long id;
     private String username;
     private String password;
+    private UserRole role;
     private Collection<GrantedAuthority> authorities;
 
     public static ApplicationUserDetails buildApplicationDetails(User user) {
@@ -32,6 +34,7 @@ public class ApplicationUserDetails implements UserDetails {
                 user.getId(),
                 user.getUsername(),
                 user.getPasswordHash(),
+                user.getRole(),
                 List.of(authority)
         );
     }
