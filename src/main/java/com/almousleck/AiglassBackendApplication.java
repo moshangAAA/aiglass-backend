@@ -9,5 +9,4 @@ public class AiglassBackendApplication {
     public static void main(String[] args) {
         SpringApplication.run(AiglassBackendApplication.class, args);
     }
-
 }

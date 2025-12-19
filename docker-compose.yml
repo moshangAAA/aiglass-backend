@@ -16,6 +16,8 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       retries: 5
+    networks:
+      - aiglass-backend-network
 
   redis:
     image: redis:7-alpine
@@ -30,6 +32,12 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       retries: 5
+    networks:
+      - aiglass-backend-network
+
+networks:
+  aiglass-backend-network:
+    driver: bridge
 
 volumes:
   mysql_data:
