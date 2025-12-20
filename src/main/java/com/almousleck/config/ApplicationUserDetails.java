@@ -1,7 +1,7 @@
 package com.almousleck.config;
 
-import com.almousleck.model.User;
 import com.almousleck.enums.UserRole;
+import com.almousleck.model.User;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -74,3 +74,5 @@ public class ApplicationUserDetails implements UserDetails {
         return true;
     }
 }
+
+

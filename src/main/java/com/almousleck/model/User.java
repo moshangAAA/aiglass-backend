@@ -3,6 +3,7 @@ package com.almousleck.model;
 import com.almousleck.common.BaseEntity;
 import com.almousleck.enums.UserRole;
 import jakarta.persistence.*;
+
 import lombok.*;
 
 @Getter
@@ -41,3 +42,5 @@ public class User extends BaseEntity {
     @Column(nullable = false, length = 255)
     private String passwordHash;
 }
+
+

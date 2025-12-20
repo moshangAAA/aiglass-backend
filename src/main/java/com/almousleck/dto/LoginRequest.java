@@ -12,3 +12,5 @@ public class LoginRequest {
     @NotBlank(message = "需要密码")
     private String password;
 }
+
+

@@ -13,3 +13,5 @@ public class AuthResponse {
     private String username;
     private UserRole role;
 }
+
+

@@ -16,3 +16,5 @@ public class RegisterRequest {
     @NotBlank(message = "需要密码")
     private String password;
 }
+
+

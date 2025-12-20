@@ -50,6 +50,7 @@ public class AuthenticationTokenFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+
     // helper method
     private String parseJWT(HttpServletRequest request) {
         String header = request.getHeader("Authorization");
