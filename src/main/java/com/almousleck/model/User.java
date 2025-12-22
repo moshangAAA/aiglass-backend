@@ -6,6 +6,8 @@ import jakarta.persistence.*;
 
 import lombok.*;
 
+import java.time.LocalDateTime;
+
 @Getter
 @Setter
 @AllArgsConstructor
@@ -41,6 +43,25 @@ public class User extends BaseEntity {
 
     @Column(nullable = false, length = 255)
     private String passwordHash;
+
+    @Column(length = 6)
+    private String otpCode;
+
+    private LocalDateTime otpGeneratedAt;
+
+    @Column(nullable = false)
+    private Boolean otpVerified = false;
+
+    @Column(nullable = false)
+    private Boolean phoneVerified = false;
+
+    @Column(nullable = false)
+    private Integer failedLoginAttempts = 0;
+
+    private LocalDateTime lockoutTime;
+
+    @Column(nullable = false)
+    private Boolean locked = false;
 }
 
 

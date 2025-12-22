@@ -38,3 +38,11 @@ auth:
 
 server:
   port: 8080
+
+#OTP config
+app:
+  security:
+    otp:
+      expiryMinutes: ${OTP_EXPIRATION_MINUTES:300000}
+      mode: ${OTP_MODE:console}
+      rateLimitMinutes: ${RATE_LIMIT_MINUTES:10}
