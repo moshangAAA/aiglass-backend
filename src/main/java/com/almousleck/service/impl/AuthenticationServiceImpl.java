@@ -21,6 +21,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -116,7 +117,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         userRepository.save(user);
 
         // Send a success message
-        notificationService.sendPhoneVerification(phoneNumber);
+        notificationService.sendPhoneVerifiedNotification(phoneNumber);
 
         log.info("✅ Phone verified: {}", phoneNumber);
     }
@@ -149,5 +150,78 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         log.info("🔄 OTP resent to: {}", phoneNumber);
 
         return new OtpResponse("验证码已重新发送", otpExpiryMinutes * 60, otpCode);
+    }
+
+    @Override
+    @Transactional
+    public OtpResponse forgotPassword(String phoneNumber) {
+        User user = userRepository.findUserByPhoneNumber(phoneNumber)
+                .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
+
+        // Check rate limiting
+        if (user.getOtpGeneratedAt() != null) {
+            long minutesSinceLastOtp = ChronoUnit.MINUTES.between(
+                    user.getOtpGeneratedAt(),
+                    LocalDateTime.now());
+
+            if (minutesSinceLastOtp < 1) {
+                int retryAfter = (int) (1 - minutesSinceLastOtp) * 60;
+                throw new OtpRateLimitException("请求过于频繁", retryAfter);
+            }
+        }
+
+        // Generate OTP for password reset
+        String otpCode = String.format("%06d", random.nextInt(1000000));
+        user.setOtpCode(otpCode);
+        user.setOtpGeneratedAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        // Send OTP
+        notificationService.sendPasswordResetOtp(phoneNumber, otpCode, otpExpiryMinutes);
+
+        log.info("🔑 Password reset OTP sent to: {}", phoneNumber);
+
+        return new OtpResponse("密码重置验证码已发送", otpExpiryMinutes * 60, otpCode);
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(String phoneNumber, String otpCode, String newPassword) {
+        User user = userRepository.findUserByPhoneNumber(phoneNumber)
+                .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
+
+        // check if OTP exist
+        if(user.getOtpCode() == null || user.getOtpGeneratedAt() == null)
+            throw new InvalidOtpException("请先获取验证码");
+
+        // Check if OTP expired
+        long minutesSinceGeneration = ChronoUnit.MINUTES
+                .between(
+                        user.getOtpGeneratedAt(), LocalDateTime.now()
+                );
+
+        if (minutesSinceGeneration > otpExpiryMinutes)
+            throw new OtpExpiredException("验证码已过期，请重新获取");
+
+        // Verify OTP code
+        if (!user.getOtpCode().equals(otpCode))
+            throw new InvalidOtpException("验证码错误");
+
+        // reset
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setOtpCode(null);
+        user.setOtpVerified(false);
+
+        // Reset lockout if the account was locked
+        user.setLocked(false);
+        user.setFailedLoginAttempts(0);
+        user.setLockoutTime(null);
+
+        userRepository.save(user);
+
+        // Send confirmation notification
+        notificationService.sendPasswordResetConfirmation(phoneNumber);
+
+        log.info("Correct! Your password reset successful for: {}", phoneNumber);
     }
 }

@@ -41,4 +41,21 @@ public class AuthenticationController {
         OtpResponse response = authenticationService.resendOtp(request.getPhoneNumber());
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<OtpResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        OtpResponse response = authenticationService.forgotPassword(request.getPhoneNumber());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authenticationService.resetPassword(
+                request.getPhoneNumber(),
+                request.getOtpCode(),
+                request.getNewPassword()
+        );
+        return ResponseEntity.ok(Map.of("message", "密码重置成功，请使用新密码登录"));
+    }
+
 }
