@@ -1,12 +1,14 @@
 package com.almousleck.jwt;
 
 import com.almousleck.config.ApplicationUserDetailsService;
+import com.almousleck.service.TokenBlacklistService;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -15,11 +17,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+@Slf4j
 @RequiredArgsConstructor
 public class AuthenticationTokenFilter extends OncePerRequestFilter {
 
     private final JwtUtils jwtUtils;
     private final ApplicationUserDetailsService applicationUserDetailsService;
+    private final TokenBlacklistService tokenBlacklistService;
 
     @Override
     protected void doFilterInternal(
@@ -28,6 +32,13 @@ public class AuthenticationTokenFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain) throws ServletException, IOException {
         try {
             String jwt = parseJWT(request);
+
+            if (jwt != null && tokenBlacklistService.isTokenBlacklisted(jwt)) {
+                log.warn("Blocked attempt to use a blacklisted token!");
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.getWriter().write("您的令牌已被列入黑名单，您需要重新登录！");
+                return;
+            }
             if (StringUtils.hasText(jwt) && jwtUtils.validateToken(jwt)) {
                 String username = jwtUtils.getUsernameFromToken(jwt);
                 UserDetails userDetails = applicationUserDetailsService.loadUserByUsername(username);

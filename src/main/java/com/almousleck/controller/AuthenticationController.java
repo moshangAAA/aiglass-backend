@@ -2,6 +2,8 @@ package com.almousleck.controller;
 
 import com.almousleck.dto.*;
 import com.almousleck.service.AuthenticationService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -56,6 +59,32 @@ public class AuthenticationController {
                 request.getNewPassword()
         );
         return ResponseEntity.ok(Map.of("message", "密码重置成功，请使用新密码登录"));
+    }
+
+    @PostMapping("/refresh-token")
+    public ResponseEntity<TokenRefreshResponse> refreshToken(@Valid @RequestBody TokenRefreshRequest request) {
+        TokenRefreshResponse response = authenticationService.refreshToken(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(HttpServletRequest request, @RequestBody Map<String, String> body) {
+        // Get access token from Header
+        String authHeader = request.getHeader("Authorization");
+        String accessToken = null;
+        if (authHeader != null && authHeader.startsWith("Bearer "))
+            accessToken = authHeader.substring(7);
+
+        // Get refresh token from Body
+        String refreshToken = body.get("refreshToken");
+
+        if (accessToken != null && refreshToken != null) {
+            authenticationService.logout(accessToken, refreshToken);
+            return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
+        }
+
+        return ResponseEntity.badRequest()
+                .body(Map.of("message", "Tokens required for logout"));
     }
 
 }

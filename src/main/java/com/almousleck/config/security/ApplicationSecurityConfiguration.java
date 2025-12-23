@@ -3,6 +3,7 @@ package com.almousleck.config.security;
 import com.almousleck.config.ApplicationUserDetailsService;
 import com.almousleck.jwt.AuthenticationTokenFilter;
 import com.almousleck.jwt.JwtUtils;
+import com.almousleck.service.TokenBlacklistService;
 import org.modelmapper.ModelMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,18 +17,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 public class ApplicationSecurityConfiguration {
 
     @Bean
-    public PasswordEncoder  passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-    @Bean
-    public ModelMapper modelMapper() {
-        return new ModelMapper();
-    }
-
-    @Bean
-    public AuthenticationTokenFilter authenticationTokenFilter(JwtUtils jwtUtils, 
-                                                               ApplicationUserDetailsService detailsService) {
-        return new AuthenticationTokenFilter(jwtUtils, detailsService);
+    public AuthenticationTokenFilter authenticationTokenFilter(JwtUtils jwtUtils,
+                                                               ApplicationUserDetailsService detailsService,
+                                                               TokenBlacklistService tokenBlacklistService) {
+        return new AuthenticationTokenFilter(jwtUtils, detailsService, tokenBlacklistService);
     }
 
     @Bean
@@ -41,6 +34,15 @@ public class ApplicationSecurityConfiguration {
         authenticationProvider.setUserDetailsService(applicationUserDetailsService);
         authenticationProvider.setPasswordEncoder(passwordEncoder());
         return authenticationProvider;
+    }
+
+    @Bean
+    public PasswordEncoder  passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+    @Bean
+    public ModelMapper modelMapper() {
+        return new ModelMapper();
     }
 
 }

@@ -1,9 +1,6 @@
 package com.almousleck.service;
 
-import com.almousleck.dto.AuthResponse;
-import com.almousleck.dto.LoginRequest;
-import com.almousleck.dto.OtpResponse;
-import com.almousleck.dto.RegisterRequest;
+import com.almousleck.dto.*;
 
 public interface AuthenticationService {
     OtpResponse register(RegisterRequest request);
@@ -12,4 +9,6 @@ public interface AuthenticationService {
     OtpResponse resendOtp(String phoneNumber);
     OtpResponse forgotPassword(String phoneNumber);
     void resetPassword(String phoneNumber, String otpCode, String password);
+    TokenRefreshResponse refreshToken(TokenRefreshRequest request);
+    void logout(String accessToken, String refreshToken);
 }

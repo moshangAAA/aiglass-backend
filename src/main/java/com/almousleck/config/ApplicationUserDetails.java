@@ -2,10 +2,7 @@ package com.almousleck.config;
 
 import com.almousleck.enums.UserRole;
 import com.almousleck.model.User;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -15,43 +12,38 @@ import java.util.Collection;
 import java.util.List;
 
 @Getter
-@Setter
-@AllArgsConstructor
-@NoArgsConstructor
+@RequiredArgsConstructor
 public class ApplicationUserDetails implements UserDetails {
 
-    private Long id;
-    private String username;
-    private String password;
-    private UserRole role;
-    private Collection<GrantedAuthority> authorities;
+    private final User user;
+    private final Collection<GrantedAuthority> authorities;
 
     public static ApplicationUserDetails buildApplicationDetails(User user) {
-        GrantedAuthority authority =
-                new SimpleGrantedAuthority("ROLE_" + user.getRole().name());
-
-        return new ApplicationUserDetails(
-                user.getId(),
-                user.getUsername(),
-                user.getPasswordHash(),
-                user.getRole(),
-                List.of(authority)
+        List<GrantedAuthority> authorities = List.of(
+                new SimpleGrantedAuthority("ROLE_" + user.getRole().name())
         );
+        return new ApplicationUserDetails(user, authorities);
+    }
+
+    public Long getId() {
+        return user.getId();
+    }
+    public UserRole getRole() {
+        return user.getRole();
+    }
+
+    @Override
+    public String getUsername() {
+        return user.getUsername();
+    }
+    @Override
+    public String getPassword() {
+        return user.getPasswordHash();
     }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return authorities;
-    }
-
-    @Override
-    public @Nullable String getPassword() {
-        return password;
-    }
-
-    @Override
-    public String getUsername() {
-        return username;
     }
 
     @Override
@@ -61,7 +53,7 @@ public class ApplicationUserDetails implements UserDetails {
 
     @Override
     public boolean isAccountNonLocked() {
-        return true;
+        return !user.getLocked();
     }
 
     @Override
@@ -71,7 +63,7 @@ public class ApplicationUserDetails implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return user.getPhoneVerified();
     }
 }
 

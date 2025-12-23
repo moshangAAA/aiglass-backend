@@ -1,17 +1,17 @@
 package com.almousleck.service.impl;
 
 import com.almousleck.config.ApplicationUserDetails;
-import com.almousleck.dto.AuthResponse;
-import com.almousleck.dto.LoginRequest;
-import com.almousleck.dto.OtpResponse;
-import com.almousleck.dto.RegisterRequest;
+import com.almousleck.dto.*;
 import com.almousleck.enums.UserRole;
 import com.almousleck.exceptions.*;
 import com.almousleck.jwt.JwtUtils;
+import com.almousleck.model.RefreshToken;
 import com.almousleck.model.User;
+import com.almousleck.repository.RefreshTokenRepository;
 import com.almousleck.repository.UserRepository;
 import com.almousleck.service.AuthenticationService;
 import com.almousleck.service.NotificationService;
+import com.almousleck.service.TokenBlacklistService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
@@ -24,8 +24,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Date;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -33,6 +36,8 @@ import java.time.temporal.ChronoUnit;
 public class AuthenticationServiceImpl implements AuthenticationService {
 
     private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final TokenBlacklistService tokenBlacklistService;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtUtils jwtUtils;
@@ -78,6 +83,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     }
 
     @Override
+    @Transactional
     public AuthResponse login(LoginRequest request) {
         Authentication  authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
@@ -85,10 +91,22 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                         request.getPassword())
         );
 
-        String jwt = jwtUtils.generateTokenForUser(authentication);
         ApplicationUserDetails userDetails = (ApplicationUserDetails) authentication.getPrincipal();
+        User user = userDetails.getUser();
+
+        // Strategy: Rotation - Clear old token
+        refreshTokenRepository.deleteByUser(user);
+
+        // Issuing tokens
+        String jwt = jwtUtils.generateTokenForUser(authentication);
+        RefreshToken refreshToken = createRefreshToken(user);
         
-        return new AuthResponse(jwt, userDetails.getUsername(), userDetails.getRole());
+        return AuthResponse.builder()
+                .token(jwt)
+                .refreshToken(refreshToken.getToken())
+                .username(user.getUsername())
+                .role(user.getRole())
+                .build();
     }
 
     @Override
@@ -223,5 +241,68 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         notificationService.sendPasswordResetConfirmation(phoneNumber);
 
         log.info("Correct! Your password reset successful for: {}", phoneNumber);
+    }
+
+    @Override
+    @Transactional
+    public TokenRefreshResponse refreshToken(TokenRefreshRequest request) {
+        return refreshTokenRepository.findByToken(request.getRefreshToken())
+                .map(this::verifyExpiration)
+                .map(RefreshToken::getUser)
+                .map(user -> {
+                    // TOKEN ROTATION: Delete used token, issue brand-new ones
+                    refreshTokenRepository.deleteByUser(user);
+
+                    String newAccessToken = jwtUtils.generateTokenFromUsername(user.getUsername());
+                    RefreshToken newRefreshToken = createRefreshToken(user);
+
+                    return TokenRefreshResponse.builder()
+                            .accessToken(newAccessToken)
+                            .refreshToken(newRefreshToken.getToken())
+                            .build();
+                })
+                .orElseThrow(() -> new TokenRefreshException(request.getRefreshToken(),
+                        "Refresh token is not in database!"));
+    }
+
+    @Override
+    @Transactional
+    public void logout(String accessToken, String refreshToken) {
+        // 1. Blacklist the Access Token
+        try {
+            Date expiration = jwtUtils.getExpirationDateFromToken(accessToken);
+            long ttlInSeconds = (expiration.getTime() - System.currentTimeMillis()) / 1000;
+
+            if (ttlInSeconds > 0)
+                tokenBlacklistService.blacklistToken(accessToken, ttlInSeconds);
+        } catch (Exception ex) {
+            log.warn("Could not blacklist access token: {}", ex.getMessage());
+        }
+
+        // Revoke the refresh token
+        refreshTokenRepository.findByToken(refreshToken)
+                .ifPresent(token -> refreshTokenRepository
+                        .deleteByUser(token.getUser()));
+        log.info("User logged out successfully. Tokens revoked.");
+    }
+
+    // helpers methods
+    private RefreshToken createRefreshToken(User user) {
+        RefreshToken refreshToken = RefreshToken.builder()
+                .user(user)
+                .expiryDate(Instant.now().plusMillis(jwtUtils.getRefreshExpirationTime()))
+                .token(UUID.randomUUID().toString())
+                .build();
+
+        return refreshTokenRepository.save(refreshToken);
+    }
+
+    private RefreshToken verifyExpiration(RefreshToken token) {
+        if (token.getExpiryDate().isBefore(Instant.now())) {
+            refreshTokenRepository.delete(token);
+            throw new TokenRefreshException(token.getToken(),
+                    "Refresh token has expired. Please log in again.");
+        }
+        return token;
     }
 }
