@@ -33,9 +33,12 @@ build/
 .vscode/
 
 .env
+.json
 
 ### Project Specific ###
 systemdesign/
 project_analysis.md
 system_exploration.md
 backendimplement.md
+hardware_integration_bridge.md
+project_summary_implementation.md
