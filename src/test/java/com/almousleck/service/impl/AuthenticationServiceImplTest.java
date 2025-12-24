@@ -7,8 +7,12 @@ import com.almousleck.dto.RegisterRequest;
 import com.almousleck.enums.UserRole;
 import com.almousleck.exceptions.ResourceAlreadyExistsException;
 import com.almousleck.jwt.JwtUtils;
+import com.almousleck.model.RefreshToken;
 import com.almousleck.model.User;
+import com.almousleck.repository.RefreshTokenRepository;
 import com.almousleck.repository.UserRepository;
+import com.almousleck.service.NotificationService;
+import com.almousleck.service.TokenBlacklistService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +41,12 @@ class AuthenticationServiceImplTest {
     private JwtUtils jwtUtils;
     @Mock
     private ModelMapper modelMapper;
+    @Mock
+    private RefreshTokenRepository refreshTokenRepository;
+    @Mock
+    private TokenBlacklistService tokenBlacklistService;
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private AuthenticationServiceImpl authenticationServiceImpl;
@@ -75,11 +85,14 @@ class AuthenticationServiceImplTest {
         when(userRepository.existsByPhoneNumber(registerRequest.getPhoneNumber())).thenReturn(false);
         when(modelMapper.map(registerRequest, User.class)).thenReturn(user);
         when(passwordEncoder.encode(registerRequest.getPassword())).thenReturn("encodedPassword");
+        
         // Act
         authenticationServiceImpl.register(registerRequest);
+        
         // Assert
         verify(userRepository).save(user);
         verify(passwordEncoder).encode(registerRequest.getPassword());
+        verify(notificationService).sendOtp(anyString(), anyString(), anyInt());
     }
 
     @Test
@@ -111,6 +124,14 @@ class AuthenticationServiceImplTest {
         .thenReturn(authentication);
         when(authentication.getPrincipal()).thenReturn(userDetails);
         when(jwtUtils.generateTokenForUser(authentication)).thenReturn("jwt-token");
+        
+        // Mock Refresh Token Logic
+        when(jwtUtils.getRefreshExpirationTime()).thenReturn(3600000L); // 1 hour
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> {
+            RefreshToken t = invocation.getArgument(0);
+            t.setId(1L);
+            return t;
+        });
 
         AuthResponse response = authenticationServiceImpl.login(loginRequest);
 
@@ -119,7 +140,7 @@ class AuthenticationServiceImplTest {
         assertEquals("jwt-token", response.getToken());
         assertEquals("almousleck", response.getUsername());
         assertEquals(UserRole.USER, response.getRole());
-
+        verify(refreshTokenRepository).deleteByUser(user);
     }
 
 }

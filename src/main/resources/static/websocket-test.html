@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Glass - WebSocket Diagnostic</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body { font-family: monospace; background: #1a1a1a; color: #0f0; padding: 20px; }
+        .log { border: 1px solid #333; padding: 10px; height: 300px; overflow-y: scroll; background: #000; }
+        input, button { padding: 10px; background: #333; color: white; border: 1px solid #555; }
+        .red { color: #f55; }
+        .green { color: #5f5; }
+    </style>
+</head>
+<body>
+<h2>AI Glass WebSocket Diagnostic</h2>
+
+<div>
+    <input type="text" id="token" placeholder="Paste JWT Token Here" style="width: 400px;">
+    <button onclick="connect()">CONNECT</button>
+    <button onclick="disconnect()" class="red">DISCONNECT</button>
+</div>
+<br>
+<div>
+    <input type="text" id="msg" placeholder="Type AR Command..." value="SHOW_HUD">
+    <button onclick="sendSignal()">SEND SIGNAL</button>
+</div>
+
+<h3>Console Log:</h3>
+<div id="console" class="log"></div>
+
+<script>
+    var stompClient = null;
+
+    function log(message) {
+        var consoleDiv = document.getElementById('console');
+        consoleDiv.innerHTML += `<div>> ${message}</div>`;
+        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+
+    function connect() {
+        var token = document.getElementById('token').value;
+        if (!token) { alert("Please enter JWT Token!"); return; }
+
+        var socket = new SockJS('http://localhost:8080/ws');
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect({ 'Authorization': 'Bearer ' + token }, function (frame) {
+            log("<span class='green'>CONNECTED</span> " + frame);
+
+            // Subscribe to AR Updates
+            stompClient.subscribe('/topic/ar-updates', function (message) {
+                log("RECEIVED AR UPDATE: " + message.body);
+            });
+
+        }, function (error) {
+            log("<span class='red'>CONNECTION FAILED:</span> " + error);
+        });
+    }
+
+    function disconnect() {
+        if (stompClient !== null) {
+            stompClient.disconnect();
+        }
+        stompClient = null; // Clear the client object
+        log("Disconnected.");
+    }
+
+    function sendSignal() {
+        if (!stompClient) {
+            alert("Not Connected!");
+            return;
+        }
+
+        var text = document.getElementById('msg').value;
+        if (!text || text.trim() === "") {
+             alert("Please type a command!");
+             return;
+        }
+
+        var payload = JSON.stringify({
+            type: "VOICE",
+            action: text,
+            payload: { "confidence": 0.98 },
+            timestamp: new Date().toISOString()
+        });
+        
+        try {
+            stompClient.send("/app/signal", {}, payload);
+            log("SENT: " + payload);
+        } catch (e) {
+            log("ERROR: " + e);
+        }
+    }
+</script>
+</body>
+</html>

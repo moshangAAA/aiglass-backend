@@ -43,12 +43,9 @@ public class DeviceController {
             @RequestParam String serialNumber,
             @RequestParam(required = false) Integer batteryLevel,
             HttpServletRequest request) {
-
         // Auto-capture IP from the request header/remote address
         String clientIp = request.getRemoteAddr();
-
         deviceService.updateHeartbeat(serialNumber, batteryLevel, clientIp);
-
         return ResponseEntity.ok().build();
     }
 

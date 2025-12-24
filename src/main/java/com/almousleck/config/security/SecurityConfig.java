@@ -29,7 +29,11 @@ public class SecurityConfig {
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(authEntryPoint))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**", "/api/v1/devices/heartbeat").permitAll()
+                        .requestMatchers("/api/v1/auth/**",
+                                "/api/v1/devices/heartbeat",
+                                "/ws/**",
+                                "/websocket-test.html"
+                                ).permitAll()
                         .anyRequest().authenticated());
 
         http.authenticationProvider(authProvider);

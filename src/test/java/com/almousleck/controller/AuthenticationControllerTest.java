@@ -40,6 +40,12 @@ class AuthenticationControllerTest {
         request.setUsername("newuser");
         request.setPhoneNumber("123456789");
         request.setPassword("password");
+        
+        // Mock the response
+        com.almousleck.dto.OtpResponse mockResponse = new com.almousleck.dto.OtpResponse(
+            "用户注册成功", 300, "123456"
+        );
+        when(authenticationService.register(any(RegisterRequest.class))).thenReturn(mockResponse);
 
         // Send POST-Request
         mockMvc.perform(post("/api/v1/auth/register")
@@ -90,6 +96,7 @@ class AuthenticationControllerTest {
         // Mock the response
         AuthResponse response = new AuthResponse(
                 "fake-jwt-token",
+                "fake-refresh-token",
                 "newuser",
                 UserRole.USER
         );
