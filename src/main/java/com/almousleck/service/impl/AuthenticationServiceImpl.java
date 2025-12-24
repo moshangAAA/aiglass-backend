@@ -10,6 +10,7 @@ import com.almousleck.model.User;
 import com.almousleck.repository.RefreshTokenRepository;
 import com.almousleck.repository.UserRepository;
 import com.almousleck.service.AuthenticationService;
+import com.almousleck.service.LoginAttemptService;
 import com.almousleck.service.NotificationService;
 import com.almousleck.service.TokenBlacklistService;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     private final JwtUtils jwtUtils;
     private final ModelMapper modelMapper;
     private final NotificationService notificationService;
+    private final LoginAttemptService loginAttemptService;
 
 
     private static final SecureRandom random = new SecureRandom();
@@ -85,6 +87,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     @Override
     @Transactional
     public AuthResponse login(LoginRequest request) {
+        loginAttemptService.checkAccountLock(request.getIdentifier());
+
         Authentication  authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.getIdentifier(),

@@ -3,7 +3,6 @@ package com.almousleck.controller;
 import com.almousleck.dto.*;
 import com.almousleck.service.AuthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -14,7 +13,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
-import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/v1/auth")

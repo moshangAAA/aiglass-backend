@@ -45,6 +45,14 @@ public class LoginAttemptService {
             log.info("📊 Current failed attempts for {}: {}/{}",
                     identifier, attempts, MAX_FAILED_LOGIN_ATTEMPTS);
 
+            // Warning on 4th attempt (MAX=5, so checking if attempts == 4)
+            if (attempts == MAX_FAILED_LOGIN_ATTEMPTS - 1) {
+                notificationService.sendLoginWarningNotification(
+                        user.getPhoneNumber(),
+                        MAX_FAILED_LOGIN_ATTEMPTS - attempts
+                );
+            }
+
             if (attempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
                 user.setLocked(true);
                 user.setLockoutTime(LocalDateTime.now());
@@ -62,6 +70,18 @@ public class LoginAttemptService {
             }
         } else {
             log.warn("❌ Login failed for non-existent user: {}", identifier);
+        }
+    }
+
+    @Transactional
+    public void unlockAccount(String identifier) {
+        User user = findUserByIdentifier(identifier);
+        if (user != null) {
+            user.setLocked(false);
+            user.setFailedLoginAttempts(0);
+            user.setLockoutTime(null);
+            userRepository.save(user);
+            log.info("🔓 Admin manually unlocked account: {}", identifier);
         }
     }
 
@@ -84,6 +104,8 @@ public class LoginAttemptService {
             }
         }
     }
+
+
 
     // Helper method
     private User findUserByIdentifier(String identifier) {

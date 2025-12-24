@@ -47,6 +47,8 @@ class AuthenticationServiceImplTest {
     private TokenBlacklistService tokenBlacklistService;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private com.almousleck.service.LoginAttemptService loginAttemptService;
 
     @InjectMocks
     private AuthenticationServiceImpl authenticationServiceImpl;
