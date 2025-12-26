@@ -9,10 +9,7 @@ import com.almousleck.model.RefreshToken;
 import com.almousleck.model.User;
 import com.almousleck.repository.RefreshTokenRepository;
 import com.almousleck.repository.UserRepository;
-import com.almousleck.service.AuthenticationService;
-import com.almousleck.service.LoginAttemptService;
-import com.almousleck.service.NotificationService;
-import com.almousleck.service.TokenBlacklistService;
+import com.almousleck.service.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
@@ -45,43 +42,45 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     private final ModelMapper modelMapper;
     private final NotificationService notificationService;
     private final LoginAttemptService loginAttemptService;
+    private final MessageService  messageService;
 
 
     private static final SecureRandom random = new SecureRandom();
     @Value("${app.security.otp.expiry-minutes:5}")
     private int otpExpiryMinutes;
+    @Value("${app.security.otp.include-in-response:false}")
+    private boolean includeOtpInResponse;
 
     @Override
     public OtpResponse register(RegisterRequest request) {
-        // check if the username is taken
         if (userRepository.existsByUsername(request.getUsername()))
-            throw new ResourceAlreadyExistsException("用户名已被占用");
+            throw new ResourceAlreadyExistsException(messageService.getMessage("error.username.taken"));
 
-        // check if the phone is taken
         if (userRepository.existsByPhoneNumber(request.getPhoneNumber()))
-                throw new ResourceAlreadyExistsException("手机号已被占用");
+                throw new ResourceAlreadyExistsException(messageService.getMessage("error.phone.taken"));
 
-        // map user to model mapper
         User user = modelMapper.map(request, User.class);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         if (user.getRole() == null)
             user.setRole(UserRole.USER);
 
         // Generate OTP phone verification
-        String otpCode = String.format("%06d", random.nextInt(1000000));
-        user.setOtpCode(otpCode);
-        user.setOtpGeneratedAt(LocalDateTime.now());
-        user.setOtpVerified(false);
-        user.setPhoneVerified(false);
+       String otpCode = generateAndSetOtp(user);
+       user.setOtpVerified(false);
+       user.setPhoneVerified(false);
 
         userRepository.save(user);
 
         // Send OTP notification
         notificationService.sendOtp(request.getPhoneNumber(), otpCode, otpExpiryMinutes);
 
-        log.info("✅ User registered: {}", request.getUsername());
+        log.info("User registered: {}", request.getUsername());
 
-        return new OtpResponse("注册成功，验证码已发送", otpExpiryMinutes * 60, otpCode);
+        return new OtpResponse(
+                messageService.getMessage("otp.register.success")
+                ,
+                otpExpiryMinutes * 60,
+                includeOtpInResponse ? otpCode : null);
     }
 
     @Override
@@ -117,31 +116,18 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     public void verifyOtp(String phoneNumber, String otpCode) {
         User user = userRepository.findUserByPhoneNumber(phoneNumber)
                 .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
-        // Check if OTP exists
-        if (user.getOtpCode() == null || user.getOtpGeneratedAt() == null)
-            throw new InvalidOtpException("请先获取验证码");
-
-        // Check if OTP expired
-        long minutesSinceGeneration = ChronoUnit.MINUTES.between(
-                user.getOtpGeneratedAt(), LocalDateTime.now());
-
-        if (minutesSinceGeneration > otpExpiryMinutes)
-            throw new OtpExpiredException("验证码已过期，请重新获取");
-
-        // Verify OTP code
-        if (!user.getOtpCode().equals(otpCode))
-            throw new InvalidOtpException("验证码错误");
+        validateOtpCode(user, otpCode);
 
         // Mark as verified
         user.setOtpVerified(true);
         user.setPhoneVerified(true);
         user.setOtpCode(null);
-        userRepository.save(user);
+        user.setOtpGeneratedAt(null);
 
+        userRepository.save(user);
         // Send a success message
         notificationService.sendPhoneVerifiedNotification(phoneNumber);
-
-        log.info("✅ Phone verified: {}", phoneNumber);
+        log.info("Phone verified: {}", phoneNumber);
     }
 
     @Override
@@ -149,29 +135,20 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         User user = userRepository.findUserByPhoneNumber(phoneNumber)
                 .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
 
-        // Rate limiting - prevent spam
-        if (user.getOtpGeneratedAt() != null) {
-            long minutesSinceLastOtp = ChronoUnit.MINUTES.between(
-                    user.getOtpGeneratedAt(), LocalDateTime.now());
+        checkOtpRateLimit(user);
 
-            if (minutesSinceLastOtp < 1) {
-                int retryAfter = (int) (1 - minutesSinceLastOtp) * 60;
-                throw new OtpRateLimitException("请求过于频繁", retryAfter);
-            }
-        }
-
-        // Generate new OTP
-        String otpCode = String.format("%06d", random.nextInt(1000000));
-        user.setOtpCode(otpCode);
-        user.setOtpGeneratedAt(LocalDateTime.now());
+        String otpCode = generateAndSetOtp(user);
         userRepository.save(user);
 
         // Send OTP
         notificationService.sendOtp(phoneNumber, otpCode, otpExpiryMinutes);
 
-        log.info("🔄 OTP resent to: {}", phoneNumber);
-
-        return new OtpResponse("验证码已重新发送", otpExpiryMinutes * 60, otpCode);
+        log.info("OTP resent to: {}", phoneNumber);
+        return new OtpResponse(
+                "验证码已重新发送",
+                otpExpiryMinutes * 60,
+                includeOtpInResponse ? otpCode : null
+        );
     }
 
     @Override
@@ -180,30 +157,20 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         User user = userRepository.findUserByPhoneNumber(phoneNumber)
                 .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
 
-        // Check rate limiting
-        if (user.getOtpGeneratedAt() != null) {
-            long minutesSinceLastOtp = ChronoUnit.MINUTES.between(
-                    user.getOtpGeneratedAt(),
-                    LocalDateTime.now());
+       checkOtpRateLimit(user);
 
-            if (minutesSinceLastOtp < 1) {
-                int retryAfter = (int) (1 - minutesSinceLastOtp) * 60;
-                throw new OtpRateLimitException("请求过于频繁", retryAfter);
-            }
-        }
+       String otpCode = generateAndSetOtp(user);
+       userRepository.save(user);
 
-        // Generate OTP for password reset
-        String otpCode = String.format("%06d", random.nextInt(1000000));
-        user.setOtpCode(otpCode);
-        user.setOtpGeneratedAt(LocalDateTime.now());
-        userRepository.save(user);
-
-        // Send OTP
+        // Send password forgot OTP
         notificationService.sendPasswordResetOtp(phoneNumber, otpCode, otpExpiryMinutes);
 
-        log.info("🔑 Password reset OTP sent to: {}", phoneNumber);
-
-        return new OtpResponse("密码重置验证码已发送", otpExpiryMinutes * 60, otpCode);
+        log.info("Password reset OTP sent to: {}", phoneNumber);
+        return new OtpResponse(
+                "密码重置验证码已发送",
+                otpExpiryMinutes * 60,
+                includeOtpInResponse ? otpCode : null
+        );
     }
 
     @Override
@@ -212,22 +179,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         User user = userRepository.findUserByPhoneNumber(phoneNumber)
                 .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
 
-        // check if OTP exist
-        if(user.getOtpCode() == null || user.getOtpGeneratedAt() == null)
-            throw new InvalidOtpException("请先获取验证码");
-
-        // Check if OTP expired
-        long minutesSinceGeneration = ChronoUnit.MINUTES
-                .between(
-                        user.getOtpGeneratedAt(), LocalDateTime.now()
-                );
-
-        if (minutesSinceGeneration > otpExpiryMinutes)
-            throw new OtpExpiredException("验证码已过期，请重新获取");
-
-        // Verify OTP code
-        if (!user.getOtpCode().equals(otpCode))
-            throw new InvalidOtpException("验证码错误");
+       validateOtpCode(user, otpCode);
 
         // reset
         user.setPasswordHash(passwordEncoder.encode(newPassword));
@@ -243,7 +195,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
         // Send confirmation notification
         notificationService.sendPasswordResetConfirmation(phoneNumber);
-
         log.info("Correct! Your password reset successful for: {}", phoneNumber);
     }
 
@@ -308,5 +259,45 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                     "Refresh token has expired. Please log in again.");
         }
         return token;
+    }
+
+    public String generateAndSetOtp(User user) {
+        String otpCode = String.format("%06d", random.nextInt(1000000));
+        user.setOtpCode(otpCode);
+        user.setOtpGeneratedAt(LocalDateTime.now());
+        return otpCode;
+    }
+
+    // Validate OTP code and expiration
+    private void validateOtpCode(User user, String otpCode) {
+        // is otp valid
+        if (user.getOtpCode() == null || user.getOtpGeneratedAt() == null)
+            throw new InvalidOtpException("请先获取验证码");
+
+        // check if otp expired
+        long minutesSinceGeneration = ChronoUnit.MINUTES.between(
+                user.getOtpGeneratedAt(), LocalDateTime.now()
+        );
+
+        if (minutesSinceGeneration > otpExpiryMinutes)
+            throw new OtpExpiredException("验证码已过期，请重新获取");
+
+        //verify
+        if (!user.getOtpCode().equals(otpCode))
+            throw new InvalidOtpException("验证码错误");
+    }
+
+    // check the rate limiting to prevent spam
+    private void checkOtpRateLimit(User user) {
+        if (user.getOtpGeneratedAt() != null) {
+            long minutesSinceLastOtp = ChronoUnit.MINUTES.between(
+                    user.getOtpGeneratedAt(), LocalDateTime.now()
+            );
+
+            if (minutesSinceLastOtp < 1) {
+                int retryAfterSeconds = (int) ((1 - minutesSinceLastOtp) * 60);
+                throw new OtpRateLimitException("请求过于频繁", retryAfterSeconds);
+            }
+        }
     }
 }

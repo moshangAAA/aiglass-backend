@@ -1,6 +1,9 @@
 spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   application:
     name: aiglass-backend
+
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/aiglass_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
     username: ${SPRING_DATASOURCE_USERNAME}
@@ -24,12 +27,26 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST:redis}
+      host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD}
+      password: ${REDIS_PASSWORD:}
 
     cache:
       type: redis
+
+management:
+  endpoint:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoints:
+    health:
+      show-details: when-authorized
+  health:
+    redis:
+      enabled: true
+    db:
+      enabled: true
 
 auth:
   token:
@@ -40,10 +57,25 @@ auth:
 server:
   port: 8080
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operationsSorter: method
+    tagsSorter: alpha
+
 #OTP config
 app:
+  ratelimit:
+    requests-per-minute: 100
   security:
+    login:
+      max-attempts: 5
+      lock-duration-minutes: 30
     otp:
       expiryMinutes: ${OTP_EXPIRATION_MINUTES:300000}
       mode: ${OTP_MODE:console}
       rateLimitMinutes: ${RATE_LIMIT_MINUTES:10}
+      includeInResponse: ${OTP_INCLUDE_IN_RESPONSE:false}

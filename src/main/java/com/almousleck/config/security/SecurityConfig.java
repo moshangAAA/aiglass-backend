@@ -32,8 +32,16 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**",
                                 "/api/v1/devices/heartbeat",
                                 "/ws/**",
-                                "/websocket-test.html"
-                                ).permitAll()
+                                "/websocket-test.html",
+                                "/actuator/health",
+                                "/actuator/health/**",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**",
+                                "/swagger-resources/**",
+                                "/webjars/**"
+                        ).permitAll()
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().authenticated());
 
         http.authenticationProvider(authProvider);

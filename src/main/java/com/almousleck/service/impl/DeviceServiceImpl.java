@@ -15,6 +15,8 @@ import com.almousleck.service.DeviceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,12 +60,12 @@ public class DeviceServiceImpl implements DeviceService {
     }
 
     @Override
-    public List<DeviceResponse> getMyDevices(Long userId) {
+    public Page<DeviceResponse> getMyDevices(Long userId, Pageable pageable) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found"));
-        return deviceRepository.findByOwner(user).stream()
-                .map(this::mapToResponseWithRealTimeStatus) // Merge DB state with Redis Presence
-                .collect(Collectors.toList());
+
+        return deviceRepository.findByOwner(user, pageable)
+                .map(this::mapToResponseWithRealTimeStatus);
     }
 
     @Override

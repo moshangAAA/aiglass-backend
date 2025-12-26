@@ -96,4 +96,15 @@ class OtpSecurityTest {
         verify(notificationService).sendOtp(eq("+1234567890"), anyString(), eq(5));
         verify(userRepository).save(user);
     }
+
+    @Test
+    void testGenerateAndSetOtp_ShouldSetOtpAndTimestamp() {
+        User user = new User();
+
+        String otp = authenticationService.generateAndSetOtp(user);
+
+        assertNotNull(otp);
+        assertEquals(6, otp.length());
+        assertNotNull(user.getOtpGeneratedAt());
+    }
 }

@@ -3,6 +3,7 @@ package com.almousleck.model;
 import com.almousleck.common.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 import java.time.Instant;
 
@@ -10,7 +11,7 @@ import java.time.Instant;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
-@Builder
+@SuperBuilder
 @Entity
 @Table(name = "refresh_tokens")
 public class RefreshToken extends BaseEntity {

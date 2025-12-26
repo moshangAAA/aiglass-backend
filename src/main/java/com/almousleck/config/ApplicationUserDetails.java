@@ -3,7 +3,6 @@ package com.almousleck.config;
 import com.almousleck.enums.UserRole;
 import com.almousleck.model.User;
 import lombok.*;
-import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;

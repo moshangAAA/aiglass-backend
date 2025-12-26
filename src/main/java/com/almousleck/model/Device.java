@@ -4,6 +4,7 @@ import com.almousleck.common.BaseEntity;
 import com.almousleck.enums.DeviceStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 import java.time.Instant;
 
@@ -11,7 +12,7 @@ import java.time.Instant;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
-@Builder
+@SuperBuilder
 @Entity
 @Table(name = "devices")
 public class Device extends BaseEntity {
