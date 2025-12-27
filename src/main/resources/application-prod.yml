@@ -1,0 +1,63 @@
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  datasource:
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+
+server:
+  compression:
+    enabled: true
+  forward-headers-strategy: framework
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 10
+    max-connections: 10000
+    accept-count: 100
+  error:
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  swagger-ui:
+    enabled: false
+
+app:
+  ratelimit:
+    requests-per-minute: 60
+  security:
+    otp:
+      includeInResponse: false
+
+aliyun:
+  sms:
+    enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.almousleck: INFO
+    org.springframework.web: WARN
+    org.hibernate: WARN
+  file:
+    name: /var/log/aiglass/application.log
+    max-size: 10MB
+    max-history: 30
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
