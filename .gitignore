@@ -48,6 +48,10 @@ test-*.sh
 .DS_Store
 Thumbs.db
 
+systemdesign/
+*.md
+!README.md
+
 # Docker
 docker-compose.override.yml
 
