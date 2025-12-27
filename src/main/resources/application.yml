@@ -5,16 +5,29 @@ spring:
     name: aiglass-backend
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/aiglass_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
 
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    show-sql: false
     database-platform: org.hibernate.dialect.MySQLDialect
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
 
   sql:
     init:
@@ -24,22 +37,30 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    validate-on-migrate: true
 
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+      timeout: 60000
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          max-wait: -1ms
 
-    cache:
-      type: redis
+  cache:
+    type: redis
 
 management:
-  endpoint:
+  endpoints:
     web:
       exposure:
         include: health,info,metrics,prometheus
-  endpoints:
+  endpoint:
     health:
       show-details: when-authorized
   health:
@@ -48,34 +69,61 @@ management:
     db:
       enabled: true
 
+server:
+  port: ${SERVER_PORT:8080}
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+  error:
+    include-message: always
+    include-stacktrace: on-param
+
 auth:
   token:
-    expirationInMils: ${EXPIRATION_TIME:7200000}
-    jwtSecret: ${JWT_SECRET:36763979244226452948404D635166546A576D5A7134743777217A25432A462D}
-    refreshTokenExpirationInMils: ${REFRESH_TOKEN_EXPIRATION_IN_MILLISECONDS:604800000}
-
-server:
-  port: 8080
+    expirationInMils: ${JWT_EXPIRATION:3600000}
+    jwtSecret: ${JWT_SECRET}
+    refreshTokenExpirationInMils: ${REFRESH_TOKEN_EXPIRATION:604800000}
 
 springdoc:
   api-docs:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
-    enabled: true
+    enabled: ${SWAGGER_ENABLED:true}
     operationsSorter: method
     tagsSorter: alpha
 
-#OTP config
 app:
   ratelimit:
-    requests-per-minute: 100
+    requests-per-minute: ${RATE_LIMIT_RPM:100}
   security:
     login:
-      max-attempts: 5
-      lock-duration-minutes: 30
+      max-attempts: ${MAX_LOGIN_ATTEMPTS:5}
+      lock-duration-minutes: ${LOCK_DURATION_MINUTES:30}
     otp:
-      expiryMinutes: ${OTP_EXPIRATION_MINUTES:300000}
-      mode: ${OTP_MODE:console}
-      rateLimitMinutes: ${RATE_LIMIT_MINUTES:10}
+      expiryMinutes: ${OTP_EXPIRY_MINUTES:5}
+      rateLimitMinutes: ${OTP_RATE_LIMIT_MINUTES:1}
       includeInResponse: ${OTP_INCLUDE_IN_RESPONSE:false}
+
+aliyun:
+  sms:
+    enabled: ${ALIYUN_SMS_ENABLED:false}
+    access-key-id: ${ALIYUN_ACCESS_KEY_ID:}
+    access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:}
+    sign-name: ${ALIYUN_SMS_SIGN_NAME:AI Glass}
+    region-id: ${ALIYUN_REGION_ID:cn-chengdu}
+    endpoint: ${ALIYUN_SMS_ENDPOINT:dysmsapi.aliyuncs.com}
+    templates:
+      otp: ${ALIYUN_SMS_TEMPLATE_OTP:}
+      password-reset: ${ALIYUN_SMS_TEMPLATE_PASSWORD_RESET:}
+      login-warning: ${ALIYUN_SMS_TEMPLATE_LOGIN_WARNING:}
+      account-locked: ${ALIYUN_SMS_TEMPLATE_ACCOUNT_LOCKED:}
+      verification-success: ${ALIYUN_SMS_TEMPLATE_VERIFICATION_SUCCESS:}
+      password-changed: ${ALIYUN_SMS_TEMPLATE_PASSWORD_CHANGED:}
+
+logging:
+  level:
+    root: INFO
+    com.almousleck: ${LOG_LEVEL:INFO}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

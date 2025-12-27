@@ -25,7 +25,7 @@ public class LoginAttemptService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
 
-    @Transactional
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void loginSucceeded(String identifier) {
         findUserByIdentifier(identifier).ifPresent(user -> {
             if (user.getFailedLoginAttempts() > 0 || user.getLocked()) {
@@ -38,7 +38,7 @@ public class LoginAttemptService {
         });
     }
 
-    @Transactional
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void loginFailed(String identifier) {
         log.info("Login failed event received for: {}", identifier);
 

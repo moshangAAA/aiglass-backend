@@ -1,44 +1,135 @@
 services:
+  # MySQL Database
   mysql:
     image: mysql:8.0
-    container_name: aiglass-backend
-    restart: always
+    container_name: aiglass-mysql
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Shanghai
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      retries: 5
+      - ./docs/database:/docker-entrypoint-initdb.d:ro
     networks:
-      - aiglass-backend-network
+      - aiglass-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
+  # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: redis_cache
-    restart: always
+    container_name: aiglass-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      retries: 5
     networks:
-      - aiglass-backend-network
+      - aiglass-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
-networks:
-  aiglass-backend-network:
-    driver: bridge
+  # Backend Application
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aiglass-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Spring Profile
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      
+      # Database
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-3600000}
+      REFRESH_TOKEN_EXPIRATION: ${REFRESH_TOKEN_EXPIRATION:-604800000}
+      
+      # Aliyun SMS
+      ALIYUN_SMS_ENABLED: ${ALIYUN_SMS_ENABLED:-false}
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-AI Glass}
+      ALIYUN_REGION_ID: ${ALIYUN_REGION_ID:-cn-chengdu}
+      ALIYUN_SMS_ENDPOINT: ${ALIYUN_SMS_ENDPOINT:-dysmsapi.aliyuncs.com}
+      ALIYUN_SMS_TEMPLATE_OTP: ${ALIYUN_SMS_TEMPLATE_OTP:-}
+      ALIYUN_SMS_TEMPLATE_PASSWORD_RESET: ${ALIYUN_SMS_TEMPLATE_PASSWORD_RESET:-}
+      ALIYUN_SMS_TEMPLATE_LOGIN_WARNING: ${ALIYUN_SMS_TEMPLATE_LOGIN_WARNING:-}
+      ALIYUN_SMS_TEMPLATE_ACCOUNT_LOCKED: ${ALIYUN_SMS_TEMPLATE_ACCOUNT_LOCKED:-}
+      ALIYUN_SMS_TEMPLATE_VERIFICATION_SUCCESS: ${ALIYUN_SMS_TEMPLATE_VERIFICATION_SUCCESS:-}
+      ALIYUN_SMS_TEMPLATE_PASSWORD_CHANGED: ${ALIYUN_SMS_TEMPLATE_PASSWORD_CHANGED:-}
+      
+      # Security
+      MAX_LOGIN_ATTEMPTS: ${MAX_LOGIN_ATTEMPTS:-5}
+      LOCK_DURATION_MINUTES: ${LOCK_DURATION_MINUTES:-30}
+      OTP_EXPIRY_MINUTES: ${OTP_EXPIRY_MINUTES:-5}
+      OTP_RATE_LIMIT_MINUTES: ${OTP_RATE_LIMIT_MINUTES:-1}
+      OTP_INCLUDE_IN_RESPONSE: ${OTP_INCLUDE_IN_RESPONSE:-false}
+      
+      # Rate Limiting
+      RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-60}
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      
+      # Swagger
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    volumes:
+      - app_logs:/var/log/aiglass
+    networks:
+      - aiglass-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
+# Volumes
 volumes:
   mysql_data:
+    driver: local
   redis_data:
+    driver: local
+  app_logs:
+    driver: local
+
+# Networks
+networks:
+  aiglass-network:
+    driver: bridge
