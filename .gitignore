@@ -56,4 +56,4 @@ systemdesign/
 docker-compose.override.yml
 
 # Keep systemdesign folder (contains docs and diagrams)
-# systemdesign/
+# systemdesign/AUDIT_REPORT.txt
