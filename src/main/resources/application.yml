@@ -81,7 +81,7 @@ server:
 auth:
   token:
     expirationInMils: ${JWT_EXPIRATION:3600000}
-    jwtSecret: ${JWT_SECRET}
+    jwtSecret: ${JWT_SECRET:7ZmxqjabkGnm1pYcCuT49BGWScvJTNyS-6Mh0cJabdI}
     refreshTokenExpirationInMils: ${REFRESH_TOKEN_EXPIRATION:604800000}
 
 springdoc:
@@ -127,3 +127,4 @@ logging:
     com.almousleck: ${LOG_LEVEL:INFO}
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+

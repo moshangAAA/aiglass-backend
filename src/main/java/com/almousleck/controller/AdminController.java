@@ -1,92 +1,45 @@
 package com.almousleck.controller;
 
+import com.almousleck.dto.user.UpdateUserStatusRequest;
+import com.almousleck.dto.user.UserResponse;
+import com.almousleck.enums.UserStatus;
+import com.almousleck.model.SystemLog;
 import com.almousleck.service.LoginAttemptService;
+import com.almousleck.service.SystemLogService;
+import com.almousleck.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
-@Tag(
-        name = "3. 系统管理模块",
-        description = """
-                系统管理相关接口（仅限管理员）
-                
-                **功能说明:**
-                - 用户账户管理
-                - 账户解锁
-                - 系统配置管理
-                
-                **权限要求:**
-                - 所有接口需要管理员权限(ROLE_ADMIN)
-                - 需要JWT认证
-                
-                **安全说明:**
-                - 操作日志会被记录
-                - 敏感操作需要二次验证
-                """
-)
+@Tag(name = "系统管理", description = "管理员功能（需ADMIN权限）")
 public class AdminController {
-    private final LoginAttemptService loginAttemptService;
 
-    @Operation(
-            summary = "解锁用户账户",
-            description = """
-                    管理员手动解锁被系统锁定的用户账户
-                    
-                    **使用场景:**
-                    - 用户登录失败5次后被锁定
-                    - 用户要求紧急解锁
-                    - 误锁定需要立即恢复
-                    
-                    **业务流程:**
-                    1. 验证管理员权限
-                    2. 查找对应用户（通过用户名或手机号）
-                    3. 重置登录失败次数为0
-                    4. 移除账户锁定状态
-                    5. 清除锁定时间记录
-                    6. 记录管理员操作日志（TODO）
-                    
-                    **请求参数:**
-                    - identifier: 用户名或手机号
-                    
-                    **安全机制:**
-                    - 仅ADMIN角色可执行
-                    - 操作会被审计日志记录
-                    - 建议记录解锁原因
-                    
-                    **注意事项:**
-                    - 解锁后用户可以立即登录
-                    - 建议通知用户账户已解锁
-                    - 如果用户继续输入错误密码，会再次被锁定
-                    
-                    **使用示例:**
-                    ```json
-                    {
-                      "identifier": "13027207507"
-                    }
-                    ```
-                    
-                    **权限要求:**
-                    需要JWT认证，用户角色: ADMIN
-                    """
-    )
+    private final UserService userService;
+    private final LoginAttemptService loginAttemptService;
+    private final SystemLogService systemLogService;
+
+    @Operation(summary = "解锁用户账户")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "账户解锁成功"),
+            @ApiResponse(responseCode = "200", description = "解锁成功"),
             @ApiResponse(responseCode = "404", description = "用户未找到"),
-            @ApiResponse(responseCode = "403", description = "权限不足，仅限管理员"),
-            @ApiResponse(responseCode = "401", description = "未认证，请先登录")
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
     })
     @PostMapping("/unlock")
     @PreAuthorize("hasRole('ADMIN')")
@@ -95,4 +48,139 @@ public class AdminController {
         loginAttemptService.unlockAccount(identifier);
         return ResponseEntity.ok("账户解锁成功");
     }
+
+    @Operation(summary = "获取用户列表")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
+    })
+    @GetMapping("/users")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Page<UserResponse>> getAllUsers(
+            @RequestParam(required = false) UserStatus status,
+            @PageableDefault(size = 20, sort = "created") Pageable pageable
+    ) {
+        return ResponseEntity.ok(userService.getAllUsers(status, pageable));
+    }
+
+    @Operation(summary = "获取用户详情")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "404", description = "用户未找到"),
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
+    })
+    @GetMapping("/users/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id) {
+        return ResponseEntity.ok(userService.getUserById(id));
+    }
+
+    @Operation(summary = "更新用户状态")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "更新成功"),
+            @ApiResponse(responseCode = "404", description = "用户未找到"),
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
+    })
+    @PutMapping("/users/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserResponse> updateUserStatus(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateUserStatusRequest request
+    ) {
+        return ResponseEntity.ok(userService.updateUserStatus(id, request.getStatus(), request.getReason()));
+    }
+
+    @Operation(summary = "删除用户")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "删除成功"),
+            @ApiResponse(responseCode = "404", description = "用户未找到"),
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
+    })
+    @DeleteMapping("/users/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> deleteUser(@PathVariable Long id) {
+        userService.deleteUser(id);
+        return ResponseEntity.ok("用户删除成功");
+    }
+
+    @Operation(summary = "查看系统日志")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
+    })
+    @GetMapping("/logs")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Page<SystemLog>> getSystemLogs(
+            @PageableDefault(size = 20, sort = "created") Pageable pageable
+    ) {
+        return ResponseEntity.ok(systemLogService.getLogs(pageable));
+    }
+
+    @Operation(summary = "按用户查询日志")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
+    })
+    @GetMapping("/logs/user/{userId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Page<SystemLog>> getLogsByUser(
+            @PathVariable Long userId,
+            @PageableDefault(size = 20, sort = "created") Pageable pageable) {
+        return ResponseEntity.ok(systemLogService.getLogsByUser(userId, pageable));
+    }
+
+    @Operation(summary = "按操作类型查询日志")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
+    })
+    @GetMapping("/logs/action/{action}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Page<SystemLog>> getLogsByAction(
+            @PathVariable String action,
+            @PageableDefault(size = 20, sort = "created") Pageable pageable) {
+        return ResponseEntity.ok(systemLogService.getLogsByAction(action, pageable));
+    }
+
+    @Operation(summary = "按资源查询日志")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
+    })
+    @GetMapping("/logs/resource")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Page<SystemLog>> getLogsByResource(
+            @RequestParam String resourceType,
+            @RequestParam Long resourceId,
+            @PageableDefault(size = 20, sort = "created") Pageable pageable
+    ) {
+        return ResponseEntity.ok(systemLogService.getLogsByResource(resourceType, resourceId, pageable));
+    }
+
+    @Operation(summary = "按日期范围查询日志")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "403", description = "权限不足"),
+            @ApiResponse(responseCode = "401", description = "未认证")
+    })
+    @GetMapping("/logs/date-range")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Page<SystemLog>> getLogsByDateRange(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant start,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant end,
+            @PageableDefault(size = 20, sort = "created") Pageable pageable
+    ) {
+        return ResponseEntity.ok(systemLogService.getLogsByDateRange(start, end, pageable));
+    }
+
+
+
 }

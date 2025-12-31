@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -33,7 +34,12 @@ class LoginAttemptServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Set the @Value fields using ReflectionTestUtils
+        ReflectionTestUtils.setField(loginAttemptService, "maxFailedLoginAttempts", 5);
+        ReflectionTestUtils.setField(loginAttemptService, "lockDurationMinutes", 30);
+        
         user = new User();
+        user.setId(1L); // Set ID for proper logging
         user.setUsername("testuser");
         user.setPhoneNumber("+1234567890");
         user.setFailedLoginAttempts(0);
@@ -91,10 +97,12 @@ class LoginAttemptServiceTest {
     @Test
     void checkAccountLock_ShouldThrowException_IfLocked() {
         user.setLocked(true);
+        // Set lockout time to now, so unlock time (now + 30 min) is in the future
         user.setLockoutTime(LocalDateTime.now());
         when(userRepository.findByUsernameOrPhoneNumber("testuser", "testuser")).thenReturn(Optional.of(user));
 
         assertThrows(UserLockedException.class, () -> loginAttemptService.checkAccountLock("testuser"));
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test

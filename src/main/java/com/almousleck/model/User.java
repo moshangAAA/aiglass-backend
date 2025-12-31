@@ -2,6 +2,7 @@ package com.almousleck.model;
 
 import com.almousleck.common.BaseEntity;
 import com.almousleck.enums.UserRole;
+import com.almousleck.enums.UserStatus;
 import jakarta.persistence.*;
 
 import lombok.*;
@@ -33,6 +34,10 @@ public class User extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 255)
     private UserRole role;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserStatus status = UserStatus.ACTIVE;
 
     @Column(nullable = false)
     private Integer usageCount = 0; // Number of navigations

@@ -22,9 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -41,8 +39,7 @@ public class DeviceServiceImpl implements DeviceService {
 
     @Override
     public DeviceResponse pairDevice(DevicePairRequest request, Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found"));
+        User user = getUserByIdOrThrow(userId);
         Device device = deviceRepository.findBySerialNumber(request.getSerialNumber())
                 .map(existingDevice -> {
                     if (existingDevice.getOwner() != null) {
@@ -56,13 +53,12 @@ public class DeviceServiceImpl implements DeviceService {
         device.setName(request.getDeviceName());
         device.setStatus(DeviceStatus.OFFLINE); // Production Best Practice: Pairing != Online
 
-        return mapToResponse(deviceRepository.save(device));
+        return mapToResponseWithRealTimeStatus(deviceRepository.save(device));
     }
 
     @Override
     public Page<DeviceResponse> getMyDevices(Long userId, Pageable pageable) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found"));
+        User user = getUserByIdOrThrow(userId);
 
         return deviceRepository.findByOwner(user, pageable)
                 .map(this::mapToResponseWithRealTimeStatus);
@@ -78,25 +74,17 @@ public class DeviceServiceImpl implements DeviceService {
         // Optimization: In high-scale, I might only write to DB if battery changes > 5%
         // For now, update strictly necessary fields
         Device device = getDeviceBySerial(serialNumber);
-        boolean dirty = false;
 
-        if (batteryLevel != null && !batteryLevel.equals(device.getBatteryLevel())) {
+        if (batteryLevel != null)
             device.setBatteryLevel(batteryLevel);
-            dirty = true;
-        }
 
-        if (ipAddress != null && !ipAddress.equals(device.getIpAddress())) {
+        if (ipAddress != null)
             device.setIpAddress(ipAddress);
-            dirty = true;
-        }
 
         // Always update last_heartbeat for audit
         device.setLastHeartbeat(Instant.now());
 
-        if (dirty) {
-            deviceRepository.save(device);
-        }
-
+        deviceRepository.save(device);
     }
 
     @Override
@@ -155,7 +143,12 @@ public class DeviceServiceImpl implements DeviceService {
         log.info("Device unpaired: {}", serialNumber);
     }
 
-    // private helper methods
+    // Helper methods
+    private User getUserByIdOrThrow(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
+    }
+
     private Device createNewDevice(DevicePairRequest request) {
         return Device.builder()
                 .serialNumber(request.getSerialNumber())
@@ -174,7 +167,7 @@ public class DeviceServiceImpl implements DeviceService {
 
     private DeviceResponse mapToResponseWithRealTimeStatus(Device device) {
         String redisKey = DEVICE_ONLINE_KEY_PREFIX + device.getSerialNumber();
-        boolean isOnlineInRedis = Boolean.TRUE.equals(stringRedisTemplate.hasKey(redisKey));
+        boolean isOnlineInRedis = stringRedisTemplate.hasKey(redisKey);
 
         return DeviceResponse.builder()
                 .id(device.getId())
@@ -187,10 +180,5 @@ public class DeviceServiceImpl implements DeviceService {
                 .lastHeartbeat(device.getLastHeartbeat())
                 .connectTime(device.getConnectTime())
                 .build();
-    }
-
-    // Fallback mapper
-    private DeviceResponse mapToResponse(Device device) {
-        return mapToResponseWithRealTimeStatus(device);
     }
 }

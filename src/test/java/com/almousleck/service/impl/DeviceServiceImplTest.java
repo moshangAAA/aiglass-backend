@@ -5,6 +5,7 @@ import com.almousleck.dto.device.DeviceResponse;
 import com.almousleck.enums.DeviceStatus;
 import com.almousleck.enums.UserRole;
 import com.almousleck.exceptions.DuplicationException;
+import com.almousleck.exceptions.UnauthorizedDeviceAccessException;
 import com.almousleck.model.Device;
 import com.almousleck.model.User;
 import com.almousleck.repository.UserRepository;
@@ -19,6 +20,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -121,4 +123,84 @@ class DeviceServiceImplTest {
         verify(valueOperations).set(eq("device:online:GLASS-001"), eq("1"), anyLong(), any());
         verify(deviceRepository).save(any(Device.class)); // Should save because battery changed 80->95
     }
+
+    @Test
+    void unpairDevice_ShouldThrow_WhenUserIsNotOwner() {
+        // Arrange
+        User anotherUser = new User();
+        anotherUser.setId(99L);
+        device.setOwner(anotherUser);
+
+        when(deviceRepository.findBySerialNumber("GLASS-001"))
+                .thenReturn(Optional.of(device));
+
+        // Act and Assert
+        assertThrows(UnauthorizedDeviceAccessException.class, () -> deviceService.unpairDevice("GLASS-001", 1L));
+    }
+
+    @Test
+    void updateHeartbeat_ShouldNotSaveToDb_WhenNotFieldsChanged() {
+        // Arrange
+        device.setBatteryLevel(80);
+        device.setIpAddress("192.168.1.1");
+        when(deviceRepository.findBySerialNumber("GLASS-001"))
+                .thenReturn(Optional.of(device));
+
+        // Act
+        deviceService.updateHeartbeat("GLASS-001", 80, "192.168.1.1");
+
+        // Assert
+        verify(valueOperations).set(anyString(), anyString(), anyLong(), any());
+        verify(deviceRepository).save(any(Device.class));
+    }
+
+    @Test
+    void markDeviceOnline_ShouldUpdateStatusAndRedis() {
+        // Arrange
+        when(deviceRepository.findBySerialNumber("GLASS-001"))
+                .thenReturn(Optional.of(device));
+
+        // Act
+        deviceService.markDeviceOnline("GLASS-001");
+
+        // Assert
+        assertEquals(DeviceStatus.ONLINE, device.getStatus());
+        assertNotNull(device.getConnectTime());
+        verify(valueOperations).set(eq("device:online:GLASS-001"), eq("1"), anyLong(), eq(TimeUnit.SECONDS));
+        verify(deviceRepository).save(device);
+    }
+
+    @Test
+    void  unpairDevice_ShouldClearOwnerAndRedis() {
+        // Arrange
+        when(deviceRepository.findBySerialNumber("GLASS-001")).thenReturn(Optional.of(device));
+
+        // Act
+        deviceService.unpairDevice("GLASS-001", 1L);
+
+        // Assert
+        assertNull(device.getOwner());
+        assertEquals(DeviceStatus.OFFLINE, device.getStatus());
+        verify(redisTemplate).delete("device:online:GLASS-001");
+        verify(deviceRepository).save(device);
+    }
+
+    @Test
+    void updateHeartbeat_ShouldAlwaysUpdateLastHeartbeat() {
+        // Arrange
+        Device mockDevice = new Device();
+        mockDevice.setSerialNumber("GLASS-001");
+        mockDevice.setBatteryLevel(80);
+        when(deviceRepository.findBySerialNumber("GLASS-001"))
+                .thenReturn(Optional.of(mockDevice));
+
+        // Act
+        deviceService.updateHeartbeat("GLASS-001", 80, "127.0.0.1");
+
+        // Assert
+        verify(deviceRepository).save(argThat(device ->
+                device.getLastHeartbeat() != null && device.getBatteryLevel() == 80
+        ));
+    }
+
 }

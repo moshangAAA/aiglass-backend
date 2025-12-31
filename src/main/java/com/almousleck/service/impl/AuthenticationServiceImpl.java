@@ -21,10 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.UUID;
 
@@ -42,45 +39,34 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     private final ModelMapper modelMapper;
     private final NotificationService notificationService;
     private final LoginAttemptService loginAttemptService;
-    private final MessageService  messageService;
+    private final MessageService messageService;
+    private final OtpService otpService;
 
-
-    private static final SecureRandom random = new SecureRandom();
-    @Value("${app.security.otp.expiry-minutes:5}")
+    @Value("${app.security.otp-expiry-minutes:5}")
     private int otpExpiryMinutes;
-    @Value("${app.security.otp.include-in-response:false}")
+
+    @Value("${app.security.otp-include-in-response:false}")
     private boolean includeOtpInResponse;
 
     @Override
+    @Transactional
     public OtpResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername()))
             throw new ResourceAlreadyExistsException(messageService.getMessage("error.username.taken"));
 
         if (userRepository.existsByPhoneNumber(request.getPhoneNumber()))
-                throw new ResourceAlreadyExistsException(messageService.getMessage("error.phone.taken"));
+            throw new ResourceAlreadyExistsException(messageService.getMessage("error.phone.taken"));
 
         User user = modelMapper.map(request, User.class);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        if (user.getRole() == null)
-            user.setRole(UserRole.USER);
-
-        // Generate OTP phone verification
-       String otpCode = generateAndSetOtp(user);
-       user.setOtpVerified(false);
-       user.setPhoneVerified(false);
-
+        user.setRole(user.getRole() == null ? UserRole.USER : user.getRole());
+        user.setPhoneVerified(false);
         userRepository.save(user);
 
-        // Send OTP notification
-        notificationService.sendOtp(request.getPhoneNumber(), otpCode, otpExpiryMinutes);
+        String otp = handleOtpFlow(user.getPhoneNumber(), "REGISTER");
+        log.info("New user registered, verification OTP sent to: {}", user.getPhoneNumber());
 
-        log.info("User registered: {}", request.getUsername());
-
-        return new OtpResponse(
-                messageService.getMessage("otp.register.success")
-                ,
-                otpExpiryMinutes * 60,
-                includeOtpInResponse ? otpCode : null);
+        return createOtpResponse(otp, "otp.register.success");
     }
 
     @Override
@@ -88,22 +74,19 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     public AuthResponse login(LoginRequest request) {
         loginAttemptService.checkAccountLock(request.getIdentifier());
 
-        Authentication  authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getIdentifier(),
-                        request.getPassword())
+        Authentication auth = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.getIdentifier(), request.getPassword())
         );
 
-        ApplicationUserDetails userDetails = (ApplicationUserDetails) authentication.getPrincipal();
+        ApplicationUserDetails userDetails = (ApplicationUserDetails) auth.getPrincipal();
         User user = userDetails.getUser();
 
-        // Strategy: Rotation - Clear old token
+        // Token Rotation: Clear old tokens and generate new pair
         refreshTokenRepository.deleteByUser(user);
-
-        // Issuing tokens
-        String jwt = jwtUtils.generateTokenForUser(authentication);
+        String jwt = jwtUtils.generateTokenForUser(auth);
         RefreshToken refreshToken = createRefreshToken(user);
-        
+
+        log.info("User logged in: {}", user.getUsername());
         return AuthResponse.builder()
                 .token(jwt)
                 .refreshToken(refreshToken.getToken())
@@ -113,191 +96,134 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     }
 
     @Override
+    @Transactional
     public void verifyOtp(String phoneNumber, String otpCode) {
-        User user = userRepository.findUserByPhoneNumber(phoneNumber)
-                .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
-        validateOtpCode(user, otpCode);
+        if (!otpService.validateOtp(phoneNumber, otpCode)) {
+            throw new InvalidOtpException(messageService.getMessage("error.otp.invalid"));
+        }
 
-        // Mark as verified
-        user.setOtpVerified(true);
+        User user = findUserByPhoneOrThrow(phoneNumber);
         user.setPhoneVerified(true);
-        user.setOtpCode(null);
-        user.setOtpGeneratedAt(null);
-
         userRepository.save(user);
-        // Send a success message
+
+        // Security best practice: One-time use cleanup
+        otpService.clearOtp(phoneNumber);
         notificationService.sendPhoneVerifiedNotification(phoneNumber);
-        log.info("Phone verified: {}", phoneNumber);
+        log.info("Phone verified successfully for: {}", phoneNumber);
     }
 
     @Override
     public OtpResponse resendOtp(String phoneNumber) {
-        User user = userRepository.findUserByPhoneNumber(phoneNumber)
-                .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
-
-        checkOtpRateLimit(user);
-
-        String otpCode = generateAndSetOtp(user);
-        userRepository.save(user);
-
-        // Send OTP
-        notificationService.sendOtp(phoneNumber, otpCode, otpExpiryMinutes);
-
-        log.info("OTP resent to: {}", phoneNumber);
-        return new OtpResponse(
-                "验证码已重新发送",
-                otpExpiryMinutes * 60,
-                includeOtpInResponse ? otpCode : null
-        );
+        findUserByPhoneOrThrow(phoneNumber);
+        String otp = handleOtpFlow(phoneNumber, "RESEND");
+        return createOtpResponse(otp, "otp.resend.success");
     }
 
     @Override
     @Transactional
     public OtpResponse forgotPassword(String phoneNumber) {
-        User user = userRepository.findUserByPhoneNumber(phoneNumber)
-                .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
-
-       checkOtpRateLimit(user);
-
-       String otpCode = generateAndSetOtp(user);
-       userRepository.save(user);
-
-        // Send password forgot OTP
-        notificationService.sendPasswordResetOtp(phoneNumber, otpCode, otpExpiryMinutes);
-
-        log.info("Password reset OTP sent to: {}", phoneNumber);
-        return new OtpResponse(
-                "密码重置验证码已发送",
-                otpExpiryMinutes * 60,
-                includeOtpInResponse ? otpCode : null
-        );
+        findUserByPhoneOrThrow(phoneNumber);
+        String otp = handleOtpFlow(phoneNumber, "FORGOT_PWD");
+        return createOtpResponse(otp, "otp.forgot.success");
     }
 
     @Override
     @Transactional
     public void resetPassword(String phoneNumber, String otpCode, String newPassword) {
-        User user = userRepository.findUserByPhoneNumber(phoneNumber)
-                .orElseThrow(() -> new UserNotFoundException("手机号未注册"));
+        if (!otpService.validateOtp(phoneNumber, otpCode)) {
+            throw new InvalidOtpException(messageService.getMessage("error.otp.invalid"));
+        }
 
-       validateOtpCode(user, otpCode);
-
-        // reset
+        User user = findUserByPhoneOrThrow(phoneNumber);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
-        user.setOtpCode(null);
-        user.setOtpVerified(false);
-
-        // Reset lockout if the account was locked
+        // Reset security state
         user.setLocked(false);
         user.setFailedLoginAttempts(0);
-        user.setLockoutTime(null);
-
         userRepository.save(user);
 
-        // Send confirmation notification
+        otpService.clearOtp(phoneNumber);
         notificationService.sendPasswordResetConfirmation(phoneNumber);
-        log.info("Correct! Your password reset successful for: {}", phoneNumber);
+        log.info("Password reset successful for user: {}", phoneNumber);
     }
 
     @Override
     @Transactional
     public TokenRefreshResponse refreshToken(TokenRefreshRequest request) {
         return refreshTokenRepository.findByToken(request.getRefreshToken())
-                .map(this::verifyExpiration)
+                .map(this::verifyTokenExpiration)
                 .map(RefreshToken::getUser)
                 .map(user -> {
-                    // TOKEN ROTATION: Delete used token, issue brand-new ones
                     refreshTokenRepository.deleteByUser(user);
-
                     String newAccessToken = jwtUtils.generateTokenFromUsername(user.getUsername());
                     RefreshToken newRefreshToken = createRefreshToken(user);
-
                     return TokenRefreshResponse.builder()
                             .accessToken(newAccessToken)
                             .refreshToken(newRefreshToken.getToken())
                             .build();
                 })
-                .orElseThrow(() -> new TokenRefreshException(request.getRefreshToken(),
-                        "Refresh token is not in database!"));
+                .orElseThrow(() -> new TokenRefreshException(request.getRefreshToken(), "Invalid refresh token"));
     }
 
     @Override
     @Transactional
     public void logout(String accessToken, String refreshToken) {
-        // 1. Blacklist the Access Token
         try {
             Date expiration = jwtUtils.getExpirationDateFromToken(accessToken);
-            long ttlInSeconds = (expiration.getTime() - System.currentTimeMillis()) / 1000;
-
-            if (ttlInSeconds > 0)
-                tokenBlacklistService.blacklistToken(accessToken, ttlInSeconds);
-        } catch (Exception ex) {
-            log.warn("Could not blacklist access token: {}", ex.getMessage());
+            long ttl = (expiration.getTime() - System.currentTimeMillis()) / 1000;
+            if (ttl > 0) tokenBlacklistService.blacklistToken(accessToken, ttl);
+        } catch (Exception e) {
+            log.warn("Logout warning: Could not blacklist access token: {}", e.getMessage());
         }
 
-        // Revoke the refresh token
         refreshTokenRepository.findByToken(refreshToken)
-                .ifPresent(token -> refreshTokenRepository
-                        .deleteByUser(token.getUser()));
-        log.info("User logged out successfully. Tokens revoked.");
+                .ifPresent(token -> refreshTokenRepository.deleteByUser(token.getUser()));
+        log.info("Logout successful, tokens revoked.");
     }
 
-    // helpers methods
+    // --- Private Infrastructure Helpers ---
+
+    private String handleOtpFlow(String phone, String type) {
+        if (otpService.isRateLimited(phone)) {
+            throw new OtpRateLimitException(messageService.getMessage("error.otp.rate-limit"), 60);
+        }
+
+        String code = otpService.generateOtp(phone);
+
+        if ("FORGOT_PWD".equals(type)) {
+            notificationService.sendPasswordResetOtp(phone, code, otpExpiryMinutes);
+        } else {
+            notificationService.sendOtp(phone, code, otpExpiryMinutes);
+        }
+        return code;
+    }
+
+    private OtpResponse createOtpResponse(String code, String msgKey) {
+        return new OtpResponse(
+                messageService.getMessage(msgKey),
+                otpExpiryMinutes * 60,
+                includeOtpInResponse ? code : null
+        );
+    }
+
+    private User findUserByPhoneOrThrow(String phone) {
+        return userRepository.findUserByPhoneNumber(phone)
+                .orElseThrow(() -> new UserNotFoundException(messageService.getMessage("error.user.not-found")));
+    }
+
     private RefreshToken createRefreshToken(User user) {
-        RefreshToken refreshToken = RefreshToken.builder()
+        RefreshToken token = RefreshToken.builder()
                 .user(user)
                 .expiryDate(Instant.now().plusMillis(jwtUtils.getRefreshExpirationTime()))
                 .token(UUID.randomUUID().toString())
                 .build();
-
-        return refreshTokenRepository.save(refreshToken);
+        return refreshTokenRepository.save(token);
     }
 
-    private RefreshToken verifyExpiration(RefreshToken token) {
+    private RefreshToken verifyTokenExpiration(RefreshToken token) {
         if (token.getExpiryDate().isBefore(Instant.now())) {
             refreshTokenRepository.delete(token);
-            throw new TokenRefreshException(token.getToken(),
-                    "Refresh token has expired. Please log in again.");
+            throw new TokenRefreshException(token.getToken(), "Refresh token expired. Please login again.");
         }
         return token;
-    }
-
-    public String generateAndSetOtp(User user) {
-        String otpCode = String.format("%06d", random.nextInt(1000000));
-        user.setOtpCode(otpCode);
-        user.setOtpGeneratedAt(LocalDateTime.now());
-        return otpCode;
-    }
-
-    // Validate OTP code and expiration
-    private void validateOtpCode(User user, String otpCode) {
-        // is otp valid
-        if (user.getOtpCode() == null || user.getOtpGeneratedAt() == null)
-            throw new InvalidOtpException("请先获取验证码");
-
-        // check if otp expired
-        long minutesSinceGeneration = ChronoUnit.MINUTES.between(
-                user.getOtpGeneratedAt(), LocalDateTime.now()
-        );
-
-        if (minutesSinceGeneration > otpExpiryMinutes)
-            throw new OtpExpiredException("验证码已过期，请重新获取");
-
-        //verify
-        if (!user.getOtpCode().equals(otpCode))
-            throw new InvalidOtpException("验证码错误");
-    }
-
-    // check the rate limiting to prevent spam
-    private void checkOtpRateLimit(User user) {
-        if (user.getOtpGeneratedAt() != null) {
-            long minutesSinceLastOtp = ChronoUnit.MINUTES.between(
-                    user.getOtpGeneratedAt(), LocalDateTime.now()
-            );
-
-            if (minutesSinceLastOtp < 1) {
-                int retryAfterSeconds = (int) ((1 - minutesSinceLastOtp) * 60);
-                throw new OtpRateLimitException("请求过于频繁", retryAfterSeconds);
-            }
-        }
     }
 }

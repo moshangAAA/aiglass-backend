@@ -165,6 +165,20 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(SmsException.class)
+    public ResponseEntity<ErrorResponse> handleSmsException(
+            SmsException ex,
+            HttpServletRequest request) {
+        log.error("SMS service error at {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        // Return 503 Service Unavailable - SMS service is temporarily unavailable
+        // In development, this allows registration to continue (OTP will be in response if enabled)
+        return buildErrorResponse(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "短信服务暂时不可用，请稍后重试。开发模式下，验证码将在响应中返回。",
+                request
+        );
+    }
+
 
     @ExceptionHandler(InternalAuthenticationServiceException.class)
     public ResponseEntity<ErrorResponse> handleInternalAuthenticationServiceException(

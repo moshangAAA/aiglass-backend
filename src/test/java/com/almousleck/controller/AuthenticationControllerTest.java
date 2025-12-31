@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.almousleck.exceptions.ResourceAlreadyExistsException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -23,14 +24,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 
-@WebMvcTest(AuthenticationController.class)
-@AutoConfigureMockMvc(addFilters = false) // 禁用 Spring Security 过滤器
+@WebMvcTest(
+    controllers = AuthenticationController.class,
+    excludeAutoConfiguration = RedisAutoConfiguration.class
+)
+// Disable Spring Security filters for testing
+@AutoConfigureMockMvc(addFilters = false)
 class AuthenticationControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
     @MockBean
     private AuthenticationService authenticationService;
+    
+    @MockBean
+    private com.almousleck.config.ratelimit.RateLimitFilter rateLimitFilter;
+    
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -43,7 +52,7 @@ class AuthenticationControllerTest {
         
         // Mock the response
         com.almousleck.dto.OtpResponse mockResponse = new com.almousleck.dto.OtpResponse(
-            "用户注册成功", 300, "123456"
+            "User registration successful", 300, "123456"
         );
         when(authenticationService.register(any(RegisterRequest.class))).thenReturn(mockResponse);
 
@@ -52,7 +61,7 @@ class AuthenticationControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.message").value("用户注册成功"));
+                .andExpect(jsonPath("$.message").value("User registration successful"));
     }
 
     @Test
@@ -77,14 +86,31 @@ class AuthenticationControllerTest {
         request.setPassword("password");
 
         // 测试用户名已存在
-        doThrow(new ResourceAlreadyExistsException("用户名已被占用"))
+        doThrow(new ResourceAlreadyExistsException("Username has been taken"))
                 .when(authenticationService).register(any());
 
         mockMvc.perform(post("/api/v1/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("用户名已被占用"));
+                .andExpect(jsonPath("$.message").value("Username has been taken"));
+    }
+
+    @Test
+    void register_ShouldReturnConflict_WhenPhoneNumberExists() throws Exception {
+        RegisterRequest request = new RegisterRequest();
+        request.setUsername("existingUser");
+        request.setPhoneNumber("123456789");
+        request.setPassword("password");
+
+        doThrow(new ResourceAlreadyExistsException("Ops! user with the given phone number already exists!"))
+                .when(authenticationService).register(any());
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Ops! user with the given phone number already exists!"));
     }
 
     @Test

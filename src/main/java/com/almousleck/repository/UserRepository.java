@@ -1,7 +1,9 @@
 package com.almousleck.repository;
 
-import aj.org.objectweb.asm.commons.InstructionAdapter;
+import com.almousleck.enums.UserStatus;
 import com.almousleck.model.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -14,4 +16,5 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByUsernameOrPhoneNumber(String username, String phoneNumber);
     Optional<User> findUserByPhoneNumber(String phoneNumber);
     Optional<User> findByUsername(String identifier);
+    Page<User> findByStatus(UserStatus status, Pageable pageable);
 }

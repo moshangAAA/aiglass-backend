@@ -1,5 +1,6 @@
 package com.almousleck.config.ratelimit;
 
+import com.almousleck.util.HttpRequestUtil;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.ConsumptionProbe;
@@ -44,7 +45,7 @@ public class RateLimitFilter implements Filter {
 
         // Apply rate limiting to /api/** and /actuator/**
         if (path.startsWith("/api/") || path.startsWith("/actuator/")) {
-            String clientIp = getClientIp(request);
+            String clientIp = HttpRequestUtil.getClientIp(request);
             log.info("🔥 RateLimitFilter invoked for IP: {} on path: {}", clientIp, path);
             
             byte[] bucketKey = ("rate_limit:" + clientIp).getBytes();
@@ -68,20 +69,12 @@ public class RateLimitFilter implements Filter {
                         String.format("{\"error\":\"Too many requests\",\"retryAfter\":%d}", waitForRefill)
                 );
 
-                log.warn("🚫 Rate limit exceeded for IP: {}", clientIp);
+                log.warn("ate limit exceeded for IP: {}", clientIp);
             }
         } else {
             // Not an API or actuator path, skip rate limiting
             chain.doFilter(request, response);
         }
-    }
-
-    private String getClientIp(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
     }
 }
 
