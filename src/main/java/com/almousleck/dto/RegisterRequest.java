@@ -2,6 +2,7 @@ package com.almousleck.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
@@ -14,6 +15,7 @@ public class RegisterRequest {
     private String phoneNumber;
 
     @NotBlank(message = "需要密码")
+    @Size(min = 8, message = "密码至少8个字符")
     private String password;
 }
 

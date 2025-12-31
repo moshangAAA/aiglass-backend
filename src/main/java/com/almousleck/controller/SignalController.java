@@ -16,32 +16,7 @@ import java.time.Instant;
 @Slf4j
 @Controller
 @RequiredArgsConstructor
-@Tag(
-        name = "4. WebSocket实时通信模块",
-        description = """
-                AI智能眼镜实时信号传输相关接口
-                
-                **功能说明:**
-                - 设备实时信号接收与处理
-                - 服务端主动推送消息
-                - AI处理结果实时回传
-                
-                **WebSocket连接:**
-                - 连接地址: ws://your-domain/ws
-                - 需要JWT认证
-                - 使用STOMP协议
-                
-                **通信流程:**
-                1. 设备通过WebSocket连接到服务器
-                2. 设备发送信号到 /app/signal
-                3. 服务器处理并转发到AI核心(TODO)
-                4. AI处理结果推送到 /queue/notifications
-                
-                **注意事项:**
-                - 此模块为内部服务调用，非REST接口
-                - 不会出现在Swagger UI中
-                """
-)
+@Tag(name = "WebSocket", description = "实时通信（WebSocket，不在Swagger UI中显示）")
 public class SignalController {
     private final SimpMessagingTemplate messagingTemplate;
 
@@ -52,14 +27,14 @@ public class SignalController {
      * 接收来自AI智能眼镜的实时信号并处理
      * 
      * **消息流向:**
-     * 设备 → /app/signal → 服务器处理 → AI核心(TODO)
+     * 设备 → /app/signal → 服务器处理 → AI核心（待实现：AIServiceClient集成）
      * 
      * **业务流程:**
      * 1. 接收设备发送的信号消息
      * 2. 验证用户身份（通过WebSocket认证）
      * 3. 记录信号类型和动作
      * 4. 添加服务器时间戳（用于延迟检测）
-     * 5. TODO: 转发到Python/FastAPI AI核心进行处理
+     * 5. 转发到Python/FastAPI AI核心进行处理（待实现：AIServiceClient集成）
      * 6. 回传处理结果
      * 
      * **信号类型:**
@@ -99,8 +74,8 @@ public class SignalController {
                 authentication.getName() : "未知";
         log.info("收到信号来自用户 [{}]: 类型={} 动作={}", username, message.getType(), message.getAction());
         
-        // TODO: 在实际应用中，我们会通过 gRPC/Redis 将此信息发送到 Python/FastAPI AI Core
-        // 示例: aiCoreClient.processSignal(message);
+        // Note: AI service integration pending - will be implemented via AIServiceClient
+        // Future implementation: aiServiceClient.processSignal(message);
 
         // 回显消息并添加服务器时间戳（用于延迟检测）
         message.setSenderId(username);
@@ -160,7 +135,7 @@ public class SignalController {
      * 
      * **注意事项:**
      * - 只有在线用户才能接收消息
-     * - 离线消息不会保存（TODO: 添加消息持久化）
+     * - 离线消息不会保存（待实现：消息持久化功能）
      * - 消息发送失败会记录日志
      * 
      * @param username 目标用户名

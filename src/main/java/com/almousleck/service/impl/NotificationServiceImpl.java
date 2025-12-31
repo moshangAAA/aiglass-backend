@@ -1,5 +1,6 @@
 package com.almousleck.service.impl;
 
+import com.almousleck.exceptions.SmsException;
 import com.almousleck.service.AliyunSmsService;
 import com.almousleck.service.NotificationService;
 import lombok.RequiredArgsConstructor;
@@ -15,76 +16,65 @@ import java.time.format.DateTimeFormatter;
 @RequiredArgsConstructor
 public class NotificationServiceImpl implements NotificationService {
 
-    private final AliyunSmsService smsService;
-
-    @Value("${aliyun.sms.enabled:false}")
-    private boolean smsEnabled;
+    private final AliyunSmsService aliyunSmsService;
 
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Override
     public void sendOtp(String phoneNumber, String otpCode, int expiryMinutes) {
-        String message = String.format("验证码: %s (有效期%d分钟)", otpCode, expiryMinutes);
-        if (smsEnabled)
-            smsService.sendOtp(phoneNumber, otpCode);
-        else
-            logSms("OTP验证码", phoneNumber, message);
+        executeSafe(() -> aliyunSmsService.sendOtp(phoneNumber, otpCode), "OTP", phoneNumber, "Code: " + otpCode);
     }
 
     @Override
     public void sendAccountLockedNotification(String phoneNumber, LocalDateTime unlockTime) {
         String formattedTime = unlockTime.format(TIME_FORMATTER);
-        String message = String.format("账户已被锁定，解锁时间: %s", formattedTime);
-        if (smsEnabled)
-            smsService.sendAccountLocked(phoneNumber, formattedTime);
-        else
-            logSms("账户锁定", phoneNumber, message);
+        executeSafe(() -> aliyunSmsService.sendAccountLocked(phoneNumber, formattedTime), "ACC_LOCKED", phoneNumber, "Unlock at: " + formattedTime);
     }
 
     @Override
     public void sendPhoneVerifiedNotification(String phoneNumber) {
-        String message = "手机号验证成功";
-        if (smsEnabled)
-            smsService.sendVerificationSuccess(phoneNumber);
-        else
-            logSms("验证成功", phoneNumber, message);
+        executeSafe(() -> aliyunSmsService.sendVerificationSuccess(phoneNumber), "PHONE_VERIFIED", phoneNumber, "Verification Success");
     }
 
     @Override
     public void sendPasswordResetOtp(String phoneNumber, String otpCode, int expiryMinutes) {
-        String message = String.format("密码重置验证码: %s (有效期%d分钟)", otpCode, expiryMinutes);
-        if (smsEnabled)
-            smsService.sendPasswordResetOtp(phoneNumber, otpCode);
-        else
-            logSms("密码重置", phoneNumber, message);
+        executeSafe(() -> aliyunSmsService.sendPasswordResetOtp(phoneNumber, otpCode), "PWD_RESET_OTP", phoneNumber, "Reset Code: " + otpCode);
     }
 
     @Override
     public void sendPasswordResetConfirmation(String phoneNumber) {
-        String message = "密码已成功修改";
-        if (smsEnabled)
-            smsService.sendPasswordChanged(phoneNumber);
-        else
-            logSms("密码修改", phoneNumber, message);
+        executeSafe(() -> aliyunSmsService.sendPasswordChanged(phoneNumber), "PWD_CHANGED", phoneNumber, "Password Updated Successfully");
     }
 
     @Override
     public void sendLoginWarningNotification(String phoneNumber, int attemptsRemaining) {
-        String message = String.format("登录失败警告，剩余尝试次数: %d", attemptsRemaining);
-        if (smsEnabled) {
-            smsService.sendLoginWarning(phoneNumber, attemptsRemaining);
-        } else {
-            logSms("登录警告", phoneNumber, message);
+        executeSafe(() -> aliyunSmsService.sendLoginWarning(phoneNumber, attemptsRemaining), "LOGIN_WARN", phoneNumber, "Attempts left: " + attemptsRemaining);
+    }
+
+    /**
+     *Our helper methods do: Executes an SMS action safely.
+     * If the SMS provider fails, it logs the error and provides a fallback console log
+     * to ensure business continuity during development or provider outages.
+     */
+    private void executeSafe(Runnable action, String type, String phone, String context) {
+        try {
+            action.run();
+        }  catch (SmsException ex) {
+            log.error("Notification provider failed for {} ({}). Error: {}", phone, type, ex.getMessage());
+            logFallback(type, phone, context);
+        } catch (Exception ex) {
+            log.error("Unexpected error in notification flow for {}", phone, ex);
+            logFallback(type, phone, context);
         }
     }
 
-    // Helper method to send notifications
-    private void logSms(String type, String phoneNumber, String message) {
-        log.info("=".repeat(60));
-        log.info("📱 SMS [{}] -> {}", type, phoneNumber);
-        log.info("📄 内容: {}", message);
-        log.info("💡 提示: 生产环境启用 ALIYUN_SMS_ENABLED=true");
-        log.info("=".repeat(60));
+    private void logFallback(String type, String phone, String context) {
+        log.info("================ FALLBACK NOTIFICATION ================");
+        log.info("TYPE    : {}", type);
+        log.info("TO      : {}", phone);
+        log.info("CONTENT : {}", context);
+        log.info("PROD TIP: Ensure ALIYUN_SMS_ENABLED is true and keys are valid.");
+        log.info("=======================================================");
     }
 }

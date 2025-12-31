@@ -93,7 +93,7 @@ public class LoginAttemptService {
             user.setLockoutTime(null);
             userRepository.save(user);
             log.info("Admin manually unlocked account: User ID {}", user.getId());
-            // TODO: Add audit trail logging here
+            // Note: Audit trail logging is handled by SystemLogService when called from AdminController
         });
     }
 
